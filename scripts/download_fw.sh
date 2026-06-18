@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
-# Copyright (c) 2025 Salvo Giangreco
-# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# Copyright (C) 2025 Salvo Giangreco
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
 
 # [
 source "$SRC_DIR/scripts/utils/firmware_utils.sh" || exit 1
@@ -15,6 +21,7 @@ IMEI=""
 SERIAL_NO=""
 LATEST_FIRMWARE=""
 ZIP_FILE=""
+FW_URL=""
 
 PREPARE_SCRIPT()
 {
@@ -36,7 +43,6 @@ PREPARE_SCRIPT()
         else
             EXTRA_FIRMWARES+=("$1")
         fi
-
         shift
     done
 
@@ -73,36 +79,16 @@ PRINT_USAGE()
 
 VERIFY_ODIN_PACKAGES()
 {
-    local FILE_NAME
-    local LENGTH
-    local STORED_HASH
-    local CALCULATED_HASH
-
+    local FILE_NAME LENGTH STORED_HASH CALCULATED_HASH
     while IFS= read -r f; do
         FILE_NAME="$(basename "$f")"
         LOG_STEP_IN "- Verifying $FILE_NAME..."
-
         FILE_NAME="${FILE_NAME%.md5}"
-
-        # Samsung stores the output of `md5sum` at the very end of the file
-        LENGTH="32" # Length of MD5 hash
-        LENGTH="$((LENGTH + 2))" # 2 whitespace chars
-        LENGTH="$((LENGTH + ${#FILE_NAME}))" # File name without .md5 extension
-        LENGTH="$((LENGTH + 1))" # 1 newline char
-
+        LENGTH="32"; LENGTH="$((LENGTH + 2))"; LENGTH="$((LENGTH + ${#FILE_NAME}))"; LENGTH="$((LENGTH + 1))"
         STORED_HASH="$(tail -c "$LENGTH" "$f" | cut -d " " -f 1 -s)"
-        if [ ! "$STORED_HASH" ] || [[ "${#STORED_HASH}" != "32" ]]; then
-            LOG "\033[0;31m! Expected hash could not be parsed\033[0m"
-            exit 1
-        fi
-
+        if [ ! "$STORED_HASH" ] || [[ "${#STORED_HASH}" != "32" ]]; then LOG "\033[0;31m! Expected hash could not be parsed\033[0m"; exit 1; fi
         CALCULATED_HASH="$(head -c-$LENGTH "$f" | md5sum | cut -d " " -f 1 -s)"
-
-        if [[ "$STORED_HASH" != "$CALCULATED_HASH" ]]; then
-            LOG "\033[0;31m! File is damaged\033[0m"
-            exit 1
-        fi
-
+        if [[ "$STORED_HASH" != "$CALCULATED_HASH" ]]; then LOG "\033[0;31m! File is damaged\033[0m"; exit 1; fi
         LOG_STEP_OUT
     done < <(find "$ODIN_DIR/${MODEL}_${CSC}" -type f -name "*.md5")
 }
@@ -113,27 +99,28 @@ PREPARE_SCRIPT "$@"
 for i in "${FIRMWARES[@]}"; do
     PARSE_FIRMWARE_STRING "$i" || exit 1
 
-    # Dynamic resolution: Reads from YML env var, falls back to your 8.0 target if empty
-    if [[ "$MODEL" == "SM-A346B" ]]; then
-        LATEST_FIRMWARE="${TARGET_FW_VER:-A346BXXSFEZC7/A346BOXMFEZC7/A346BXXSFEZC7/A346BXXSFEZC7}"
-    else
-        LATEST_FIRMWARE="$(GET_LATEST_FIRMWARE "$MODEL" "$CSC")"
-    fi
-
+    # Fetch latest version string from Samsung API for the .downloaded tracker
+    LATEST_FIRMWARE="$(GET_LATEST_FIRMWARE "$MODEL" "$CSC")"
     if [ ! "$LATEST_FIRMWARE" ]; then
         LOGE "Latest available firmware could not be fetched"
         exit 1
+    fi
+
+    # Map current model to the correct SamFW URL from YML environment variables
+    FW_URL=""
+    if [[ "$SOURCE_FIRMWARE" == *"$MODEL"* ]]; then
+        FW_URL="${SOURCE_FW_URL:-}"
+    elif [[ "$TARGET_FIRMWARE" == *"$MODEL"* ]]; then
+        FW_URL="${TARGET_FW_URL:-}"
     fi
 
     LOG_STEP_IN "- Processing $MODEL firmware with $CSC CSC"
     LOG "- Downloaded firmware: $(cat "$ODIN_DIR/${MODEL}_${CSC}/.downloaded" 2> /dev/null)"
     LOG "- Extracted firmware: $(cat "$FW_DIR/${MODEL}_${CSC}/.extracted" 2> /dev/null)"
     LOG "- Latest available firmware: $LATEST_FIRMWARE"
-
     LOG_STEP_IN
 
     if ! $FORCE; then
-        # Skip if firmware has been extracted and equal/newer than the one in FUS
         if [ -f "$FW_DIR/${MODEL}_${CSC}/.extracted" ]; then
             if COMPARE_SEC_BUILD_VERSION "$(cat "$FW_DIR/${MODEL}_${CSC}/.extracted")" "$LATEST_FIRMWARE"; then
                 LOG "\033[0;33m! This firmware has already been extracted, skipping\033[0m"
@@ -142,7 +129,6 @@ for i in "${FIRMWARES[@]}"; do
             fi
         fi
 
-        # Skip if firmware has already been downloaded
         if [ -f "$ODIN_DIR/${MODEL}_${CSC}/.downloaded" ]; then
             if ! COMPARE_SEC_BUILD_VERSION "$(cat "$ODIN_DIR/${MODEL}_${CSC}/.downloaded")" "$LATEST_FIRMWARE"; then
                 LOG "\033[0;33m! A newer firmware is available for download, use --force flag if you want to overwrite it\033[0m"
@@ -154,22 +140,29 @@ for i in "${FIRMWARES[@]}"; do
         fi
     fi
 
-    LOG "- Downloading firmware..."
+    if [[ -z "$FW_URL" ]]; then
+        LOGE "No SamFW URL provided for $MODEL. Define SOURCE_FW_URL or TARGET_FW_URL in YML."
+        exit 1
+    fi
+
+    LOG "- Downloading firmware via SamFW direct link..."
     [ -f "$ODIN_DIR/${MODEL}_${CSC}/.downloaded" ] && rm -rf "$ODIN_DIR/${MODEL}_${CSC}"
     mkdir -p "$ODIN_DIR/${MODEL}_${CSC}"
-    # shellcheck disable=SC2164
-    # Anan's samloader stores its logs in the current working directory, let's move into OUT_DIR just for this time
-    (
-    cd "$OUT_DIR"
-    if [[ "$MODEL" == "SM-A346B" ]]; then
-        samloader -m "$MODEL" -r "$CSC" -i "$IMEI" -s "$SERIAL_NO" download -v "$LATEST_FIRMWARE" -O "$ODIN_DIR/${MODEL}_${CSC}" 1> /dev/null || exit 1
-    else
-        samloader -m "$MODEL" -r "$CSC" -i "$IMEI" -s "$SERIAL_NO" download -O "$ODIN_DIR/${MODEL}_${CSC}" 1> /dev/null || exit 1
+    
+    ZIP_FILE="$ODIN_DIR/${MODEL}_${CSC}/$(basename "$FW_URL")"
+    if [[ "$ZIP_FILE" != *.zip ]]; then
+        ZIP_FILE="$ODIN_DIR/${MODEL}_${CSC}/firmware.zip"
     fi
-    )
 
-    ZIP_FILE="$(find "$ODIN_DIR/${MODEL}_${CSC}" -name "*.zip" | sort -r | head -n 1)"
-    if [ ! "$ZIP_FILE" ] || [ ! -f "$ZIP_FILE" ]; then
+    # wget with Cloudflare bypass headers and progress dots to prevent CI timeout
+    wget --user-agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
+         --header="Referer: https://samfw.com/" \
+         --progress=dot:mega -c -O "$ZIP_FILE" "$FW_URL" || {
+        LOG "\033[0;31m! SamFW download failed. Check your link or Cloudflare block.\033[0m"
+        exit 1
+    }
+
+    if [ ! -f "$ZIP_FILE" ]; then
         LOG "\033[0;31m! Download failed\033[0m"
         exit 1
     fi
@@ -179,12 +172,10 @@ for i in "${FIRMWARES[@]}"; do
 
     VERIFY_ODIN_PACKAGES
 
-    # Dynamic: Saves the actual version processed in this loop iteration (S22 or A34)
     echo -n "$LATEST_FIRMWARE" > "$ODIN_DIR/${MODEL}_${CSC}/.downloaded"
 
     LOG_STEP_OUT; LOG_STEP_OUT
 done
 
 deactivate
-
 exit 0
