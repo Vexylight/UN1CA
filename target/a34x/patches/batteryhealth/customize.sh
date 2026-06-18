@@ -10,7 +10,7 @@
 SMALI_PATCH "system" "system/priv-app/SecSettings/SecSettings.apk" \
     "smali_classes4/com/samsung/android/settings/deviceinfo/batteryinfo/BatteryRegulatoryPreferenceController.smali" "replace" \
      "getAvailabilityStatus()I" \
-     "SM-A236B" "SM-A346B"
+     "SM-A236B" "SM-A346B" "SM-A346M" "SM-A346E" "SM-A3460"
 
 SMALI_PATCH "system" "system/priv-app/SecSettings/SecSettings.apk" \
     "smali_classes4/com/samsung/android/settings/deviceinfo/batteryinfo/BatteryRegulatoryPreferenceController.smali" "replace" \
@@ -25,4 +25,4 @@ SMALI_PATCH "system" "system/priv-app/SecSettings/SecSettings.apk" \
 SMALI_PATCH "system" "system/priv-app/SecSettings/SecSettings.apk" \
     "smali_classes4/com/samsung/android/settings/deviceinfo/batteryinfo/SecBatteryInfoFragment.smali" "replace" \
     "onCreateOptionsMenu(Landroid/view/Menu;Landroid/view/MenuInflater;)V" \
-    "SM-A236B" "SM-A346B"
+    "SM-A236B" "SM-A346B" "SM-A346M" "SM-A346E" "SM-A3460"
