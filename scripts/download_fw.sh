@@ -180,7 +180,41 @@ for i in "${FIRMWARES[@]}"; do
 
     VERIFY_ODIN_PACKAGES
 
-    echo -n "$LATEST_FIRMWARE" > "$ODIN_DIR/${MODEL}_${CSC}/.downloaded"
+    # Detect actual firmware version from extracted files to prevent API mismatch
+    AP_FILE="$(find "$ODIN_DIR/${MODEL}_${CSC}" -maxdepth 1 -name "AP_*.tar.md5" | sort -r | head -n 1)"
+    CSC_FILE="$(find "$ODIN_DIR/${MODEL}_${CSC}" -maxdepth 1 \( -name "CSC_*.tar.md5" -o -name "HOME_CSC_*.tar.md5" \) | sort -r | head -n 1)"
+    CP_FILE="$(find "$ODIN_DIR/${MODEL}_${CSC}" -maxdepth 1 -name "CP_*.tar.md5" | sort -r | head -n 1)"
+
+    ACTUAL_PDA=""
+    ACTUAL_CSC=""
+    ACTUAL_CP=""
+
+    if [ -n "$AP_FILE" ]; then
+        ACTUAL_PDA="$(basename "$AP_FILE" | cut -d'_' -f2)"
+    fi
+    
+    if [ -n "$CSC_FILE" ]; then
+        CSC_BASE="$(basename "$CSC_FILE")"
+        if [[ "$CSC_BASE" == HOME_CSC_* ]]; then
+            ACTUAL_CSC="$(echo "$CSC_BASE" | cut -d'_' -f4)"
+        else
+            ACTUAL_CSC="$(echo "$CSC_BASE" | cut -d'_' -f3)"
+        fi
+    fi
+    
+    if [ -n "$CP_FILE" ]; then
+        ACTUAL_CP="$(basename "$CP_FILE" | cut -d'_' -f2)"
+    else
+        ACTUAL_CP="$ACTUAL_PDA"
+    fi
+
+    if [ -n "$ACTUAL_PDA" ] && [ -n "$ACTUAL_CSC" ]; then
+        ACTUAL_FIRMWARE="${ACTUAL_PDA}/${ACTUAL_CSC}/${ACTUAL_CP}"
+        echo -n "$ACTUAL_FIRMWARE" > "$ODIN_DIR/${MODEL}_${CSC}/.downloaded"
+        LOG "- Actual downloaded firmware: $ACTUAL_FIRMWARE"
+    else
+        echo -n "$LATEST_FIRMWARE" > "$ODIN_DIR/${MODEL}_${CSC}/.downloaded"
+    fi
 
     LOG_STEP_OUT; LOG_STEP_OUT
 done
