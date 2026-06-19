@@ -76,14 +76,11 @@ jobs:
           source ./buildenv.sh ${{ matrix.target }}
           ./scripts/build_dependencies.sh
 
-      - name: Download stock firmwares
-        env:
-          FW_URL_1: ${{ inputs.fw_url_1 }}
-          FW_URL_2: ${{ inputs.fw_url_2 }}
+      - name: Download firmware
+        if: github.event_name == 'workflow_dispatch'
         run: |
           source ./buildenv.sh ${{ matrix.target }}
-          export FW_URL_1 FW_URL_2
-          ./scripts/download_fw.sh
+          ./scripts/download_fw.sh "${{ inputs.fw_url_1 }}" "${{ inputs.fw_url_2 }}"
 
       - name: Extract stock firmwares
         run: |
