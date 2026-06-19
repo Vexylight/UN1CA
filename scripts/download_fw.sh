@@ -12,170 +12,51 @@
 source "$SRC_DIR/scripts/utils/firmware_utils.sh" || exit 1
 source "$TOOLS_DIR/venv/bin/activate" || exit 1
 
-FORCE=false
+DOWNLOAD_FIRMWARE() {
+    if [ "$#" -lt 4 ]; then
+        echo -e "Usage: ${FUNCNAME[0]} <MODEL> <DOWNLOAD_DIRECTORY> <FIRMWARE_URL_1> <FIRMWARE_URL_2>"
+        return 1
+    fi
 
-FIRMWARES=()
-MODEL=""
-CSC=""
-IMEI=""
-SERIAL_NO=""
-LATEST_FIRMWARE=""
-ZIP_FILE=""
-FW_URL=""
+    local MODEL="$1"
+    local DOWN_DIR="${2}/$MODEL"
+    local URL1="$3"
+    local URL2="$4"
 
-PREPARE_SCRIPT()
-{
-    local EXTRA_FIRMWARES=()
-    local IGNORE_SOURCE=false
-    local IGNORE_TARGET=false
+    rm -rf "$DOWN_DIR"
+    mkdir -p "$DOWN_DIR"
 
-    while [ "$#" != 0 ]; do
-        if [[ "$1" == "--force" ]] || [[ "$1" == "-f" ]]; then
-            FORCE=true
-        elif [[ "$1" == "--ignore-source" ]]; then
-            IGNORE_SOURCE=true
-        elif [[ "$1" == "--ignore-target" ]]; then
-            IGNORE_TARGET=true
-        elif [[ "$1" == "-"* ]]; then
-            LOGE "Unknown option: $1"
-            PRINT_USAGE
+    echo -e "${YELLOW}  Samsung FW Downloader (Dual Link)   ${NC}"
+    echo -e "MODEL: $MODEL"
+
+    for i in 1 2; do
+        local URL_VAR="URL$i"
+        local URL="${!URL_VAR}"
+        local OUTPUT_FILE="$DOWN_DIR/${MODEL}_part${i}.zip"
+
+        if [ -z "$URL" ]; then
+            echo -e "- ⛔️ FIRMWARE_URL_$i is empty. Provide a direct HTTPS link."
             exit 1
-        else
-            EXTRA_FIRMWARES+=("$1")
         fi
-        shift
+
+        echo -e "- 📥 Downloading firmware part $i via direct link..."
+        wget --no-check-certificate --progress=bar:force "$URL" -O "$OUTPUT_FILE"
+
+        if [ $? -ne 0 ] || [ ! -f "$OUTPUT_FILE" ]; then
+            echo -e "- ⛔️ Download failed for part $i. Check URL or network."
+            exit 1
+        fi
+
+        # Handle .zip.md5 files
+        if [[ "$URL" == *.md5 ]]; then
+            echo -e "- 🔧 Detected .zip.md5 format for part $i. Removing MD5 suffix..."
+            mv "$OUTPUT_FILE" "$DOWN_DIR/${MODEL}_part${i}.zip"
+            OUTPUT_FILE="$DOWN_DIR/${MODEL}_part${i}.zip"
+        fi
+
+        local file_size
+        file_size=$(du -m "$OUTPUT_FILE" | cut -f1)
+        echo -e "- ✅ Firmware part $i downloaded successfully! Size: ${file_size} MB"
+        echo -e "- Saved to: $OUTPUT_FILE"
     done
-
-    if ! $IGNORE_SOURCE; then
-        _CHECK_NON_EMPTY_PARAM "SOURCE_FIRMWARE" "$SOURCE_FIRMWARE" || exit 1
-        FIRMWARES+=("$SOURCE_FIRMWARE")
-        IFS=':' read -r -a SOURCE_EXTRA_FIRMWARES <<< "$SOURCE_EXTRA_FIRMWARES"
-        if [ "${#SOURCE_EXTRA_FIRMWARES[@]}" -ge 1 ]; then
-            FIRMWARES+=("${SOURCE_EXTRA_FIRMWARES[@]}")
-        fi
-    fi
-
-    if ! $IGNORE_TARGET; then
-        _CHECK_NON_EMPTY_PARAM "TARGET_FIRMWARE" "$TARGET_FIRMWARE" || exit 1
-        FIRMWARES+=("$TARGET_FIRMWARE")
-        IFS=':' read -r -a TARGET_EXTRA_FIRMWARES <<< "$TARGET_EXTRA_FIRMWARES"
-        if [ "${#TARGET_EXTRA_FIRMWARES[@]}" -ge 1 ]; then
-            FIRMWARES+=("${TARGET_EXTRA_FIRMWARES[@]}")
-        fi
-    fi
-
-    if [ "${#EXTRA_FIRMWARES[@]}" -ge 1 ]; then
-        FIRMWARES+=("${EXTRA_FIRMWARES[@]}")
-    fi
 }
-
-PRINT_USAGE()
-{
-    echo "Usage: download_fw [options] <firmware>" >&2
-    echo " --ignore-source : Skip parsing source firmware flags" >&2
-    echo " --ignore-target : Skip parsing target firmware flags" >&2
-    echo " -f, --force : Force firmware download" >&2
-}
-
-VERIFY_ODIN_PACKAGES()
-{
-    local FILE_NAME LENGTH STORED_HASH CALCULATED_HASH
-    while IFS= read -r f; do
-        FILE_NAME="$(basename "$f")"
-        LOG_STEP_IN "- Verifying $FILE_NAME..."
-        FILE_NAME="${FILE_NAME%.md5}"
-        LENGTH="32"; LENGTH="$((LENGTH + 2))"; LENGTH="$((LENGTH + ${#FILE_NAME}))"; LENGTH="$((LENGTH + 1))"
-        STORED_HASH="$(tail -c "$LENGTH" "$f" | cut -d " " -f 1 -s)"
-        if [ ! "$STORED_HASH" ] || [[ "${#STORED_HASH}" != "32" ]]; then LOG "\033[0;31m! Expected hash could not be parsed\033[0m"; exit 1; fi
-        CALCULATED_HASH="$(head -c-$LENGTH "$f" | md5sum | cut -d " " -f 1 -s)"
-        if [[ "$STORED_HASH" != "$CALCULATED_HASH" ]]; then LOG "\033[0;31m! File is damaged\033[0m"; exit 1; fi
-        LOG_STEP_OUT
-    done < <(find "$ODIN_DIR/${MODEL}_${CSC}" -type f -name "*.md5")
-}
-# ]
-
-PREPARE_SCRIPT "$@"
-
-for i in "${FIRMWARES[@]}"; do
-    PARSE_FIRMWARE_STRING "$i" || exit 1
-
-    # Fetch latest version string from Samsung API for the .downloaded tracker
-    LATEST_FIRMWARE="$(GET_LATEST_FIRMWARE "$MODEL" "$CSC")"
-    if [ ! "$LATEST_FIRMWARE" ]; then
-        LOGE "Latest available firmware could not be fetched"
-        exit 1
-    fi
-
-    # Map current model to the correct SamFW URL from YML environment variables
-    FW_URL=""
-    if [[ "$SOURCE_FIRMWARE" == *"$MODEL"* ]]; then
-        FW_URL="${SOURCE_FW_URL:-}"
-    elif [[ "$TARGET_FIRMWARE" == *"$MODEL"* ]]; then
-        FW_URL="${TARGET_FW_URL:-}"
-    fi
-
-    LOG_STEP_IN "- Processing $MODEL firmware with $CSC CSC"
-    LOG "- Downloaded firmware: $(cat "$ODIN_DIR/${MODEL}_${CSC}/.downloaded" 2> /dev/null)"
-    LOG "- Extracted firmware: $(cat "$FW_DIR/${MODEL}_${CSC}/.extracted" 2> /dev/null)"
-    LOG "- Latest available firmware: $LATEST_FIRMWARE"
-    LOG_STEP_IN
-
-    if ! $FORCE; then
-        if [ -f "$FW_DIR/${MODEL}_${CSC}/.extracted" ]; then
-            if COMPARE_SEC_BUILD_VERSION "$(cat "$FW_DIR/${MODEL}_${CSC}/.extracted")" "$LATEST_FIRMWARE"; then
-                LOG "\033[0;33m! This firmware has already been extracted, skipping\033[0m"
-                LOG_STEP_OUT; LOG_STEP_OUT
-                continue
-            fi
-        fi
-
-        if [ -f "$ODIN_DIR/${MODEL}_${CSC}/.downloaded" ]; then
-            if ! COMPARE_SEC_BUILD_VERSION "$(cat "$ODIN_DIR/${MODEL}_${CSC}/.downloaded")" "$LATEST_FIRMWARE"; then
-                LOG "\033[0;33m! A newer firmware is available for download, use --force flag if you want to overwrite it\033[0m"
-            else
-                LOG "\033[0;33m! This firmware has already been downloaded\033[0m"
-            fi
-            LOG_STEP_OUT; LOG_STEP_OUT
-            continue
-        fi
-    fi
-
-    if [[ -z "$FW_URL" ]]; then
-        LOGE "No SamFW URL provided for $MODEL. Define SOURCE_FW_URL or TARGET_FW_URL in YML."
-        exit 1
-    fi
-
-    LOG "- Downloading firmware via SamFW direct link..."
-    [ -f "$ODIN_DIR/${MODEL}_${CSC}/.downloaded" ] && rm -rf "$ODIN_DIR/${MODEL}_${CSC}"
-    mkdir -p "$ODIN_DIR/${MODEL}_${CSC}"
-    
-    ZIP_FILE="$ODIN_DIR/${MODEL}_${CSC}/$(basename "$FW_URL")"
-    if [[ "$ZIP_FILE" != *.zip ]]; then
-        ZIP_FILE="$ODIN_DIR/${MODEL}_${CSC}/firmware.zip"
-    fi
-
-    # wget with Cloudflare bypass headers and progress dots to prevent CI timeout
-    wget --user-agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
-         --header="Referer: https://samfw.com/" \
-         --progress=dot:mega -c -O "$ZIP_FILE" "$FW_URL" || {
-        LOG "\033[0;31m! SamFW download failed. Check your link or Cloudflare block.\033[0m"
-        exit 1
-    }
-
-    if [ ! -f "$ZIP_FILE" ]; then
-        LOG "\033[0;31m! Download failed\033[0m"
-        exit 1
-    fi
-
-    LOG "- Extracting $(basename "$ZIP_FILE")..."
-    EVAL "unzip -o \"$ZIP_FILE\" -d \"$ODIN_DIR/${MODEL}_${CSC}\" && rm -rf \"$ZIP_FILE\"" || exit 1
-
-    VERIFY_ODIN_PACKAGES
-
-    echo -n "$LATEST_FIRMWARE" > "$ODIN_DIR/${MODEL}_${CSC}/.downloaded"
-
-    LOG_STEP_OUT; LOG_STEP_OUT
-done
-
-deactivate
-exit 0
