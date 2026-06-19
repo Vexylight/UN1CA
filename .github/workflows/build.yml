@@ -2,6 +2,15 @@ name: Build
 
 on:
   workflow_dispatch:
+    inputs:
+      fw_url_1:
+        description: 'Firmware URL 1 (Direct HTTPS Link)'
+        required: true
+        type: string
+      fw_url_2:
+        description: 'Firmware URL 2 (Direct HTTPS Link)'
+        required: true
+        type: string
   pull_request:
   push:
     branches:
@@ -69,8 +78,8 @@ jobs:
 
       - name: Download stock firmwares
         env:
-          FW_URL_1: ${{ secrets.FW_URL_1 }}
-          FW_URL_2: ${{ secrets.FW_URL_2 }}
+          FW_URL_1: ${{ inputs.fw_url_1 }}
+          FW_URL_2: ${{ inputs.fw_url_2 }}
         run: |
           source ./buildenv.sh ${{ matrix.target }}
           export FW_URL_1 FW_URL_2
