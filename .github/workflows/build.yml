@@ -96,50 +96,17 @@ jobs:
           source ./buildenv.sh ${{ matrix.target }}
           ./scripts/make_rom.sh
           
-      - name: Upload to GoFile 
-        if: success()
+       - name: Upload to GoFile
         run: |
-          ROM_ZIP=$(find out/ -name "UN1CA_*.zip" -type f | head -n 1)
-          if [ -z "$ROM_ZIP" ]; then
-            ROM_ZIP=$(find . -name "UN1CA_*.zip" -type f | head -n 1)
-          fi
-          
-          if [ -f "$ROM_ZIP" ]; then
-            echo "Fetching optimal GoFile server..."
-            SERVER=$(curl -s https://api.gofile.io/servers | python3 -c "import sys, json; print(json.load(sys.stdin)['data']['servers'][0]['name'])")
-            
-            echo "Uploading $(basename "$ROM_ZIP") to $SERVER.gofile.io..."
-            
-            # Upload with progress bar, save response to file to prevent terminal corruption
-            curl --progress-bar -F "file=@$ROM_ZIP" "https://$SERVER.gofile.io/contents/uploadFile" -o gofile_response.json 2>/dev/null || \
-            curl --progress-bar -F "file=@$ROM_ZIP" "https://$SERVER.gofile.io/uploadFile" -o gofile_response.json 2>/dev/null
-            
-            echo ""
-            echo "Parsing response..."
-            
-            python3 -c "
-          import sys, json
-          try:
-              with open('gofile_response.json', 'r') as f:
-                  r = json.load(f)
-              if r.get('status') == 'ok':
-                  d = r.get('data', {})
-                  code = d.get('code', '')
-                  guest_token = d.get('guestToken', '')
-                  page = f'https://gofile.io/d/{code}'
-                  print('Upload successful!')
-                  print(f'Download page : {page}')
-                  if guest_token:
-                      print(f'Guest Token   : {guest_token} (Save this to manage/delete your file)')
-              else:
-                  print('Upload failed:', r)
-                  sys.exit(1)
-          except Exception as e:
-              print('Failed to parse response:', e)
-              sys.exit(1)
-          "
-            rm -f gofile_response.json
-          else
-            echo "No ROM zip found in output directory."
-            exit 1
-          fi
+          ZIP_FILE=$(find out -maxdepth 1 -type f -name "*.zip" | head -n 1)
+
+          RESPONSE=$(curl -s -F "file=@$ZIP_FILE" -F "token=${{ secrets.GOFILE_TOKEN }}" -F "folderId=${{ secrets.GOFILE_FOLDER_ID }}" "https://upload-eu-par.gofile.io/uploadFile")
+
+          echo "Uploaded successfully! Download link:"
+          echo "$RESPONSE" | jq -r '.data.downloadPage'
+
+          echo "MD5:"
+          md5sum "$ZIP_FILE"
+
+          echo "SHA256:"
+          sha256sum "$ZIP_FILE"
