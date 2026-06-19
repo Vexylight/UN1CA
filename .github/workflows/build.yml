@@ -79,4 +79,19 @@ jobs:
       - name: Download firmware
         if: github.event_name == 'workflow_dispatch'
         env:
-          SOURCE_FW_URL: ${{ inputs.source_fw_url
+          SOURCE_FW_URL: ${{ inputs.source_fw_url }}
+          TARGET_FW_URL: ${{ inputs.target_fw_url }}
+        run: |
+          source ./buildenv.sh ${{ matrix.target }}
+          export SOURCE_FW_URL TARGET_FW_URL
+          ./scripts/download_fw.sh
+
+      - name: Extract stock firmwares
+        run: |
+          source ./buildenv.sh ${{ matrix.target }}
+          ./scripts/extract_fw.sh
+
+      - name: Build ROM
+        run: |
+          source ./buildenv.sh ${{ matrix.target }}
+          ./scripts/make_rom.sh
