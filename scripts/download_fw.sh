@@ -1,16 +1,11 @@
 #!/usr/bin/env bash
 #
 # Copyright (C) 2025 Salvo Giangreco
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
+# SPDX-License-Identifier: GPL-3.0-or-later
 #
 
-# [
-source "$SRC_DIR/scripts/utils/firmware_utils.sh" || exit 1
-source "$TOOLS_DIR/venv/bin/activate" || exit 1
+source "$SRC_DIR/scripts/utils/firmware_utils.sh" || return 1
+source "$TOOLS_DIR/venv/bin/activate" || return 1
 
 DOWNLOAD_FIRMWARE() {
     if [ "$#" -lt 4 ]; then
@@ -35,8 +30,8 @@ DOWNLOAD_FIRMWARE() {
         local OUTPUT_FILE="$DOWN_DIR/${MODEL}_part${i}.zip"
 
         if [ -z "$URL" ]; then
-            echo -e "- ⛔️ FIRMWARE_URL_$i is empty. Provide a direct HTTPS link."
-            exit 1
+            echo -e "- ⛔️ FIRMWARE_URL_$i is empty. Skipping download."
+            return 1
         fi
 
         echo -e "- 📥 Downloading firmware part $i via direct link..."
@@ -44,7 +39,7 @@ DOWNLOAD_FIRMWARE() {
 
         if [ $? -ne 0 ] || [ ! -f "$OUTPUT_FILE" ]; then
             echo -e "- ⛔️ Download failed for part $i. Check URL or network."
-            exit 1
+            return 1
         fi
 
         # Handle .zip.md5 files
@@ -60,3 +55,10 @@ DOWNLOAD_FIRMWARE() {
         echo -e "- Saved to: $OUTPUT_FILE"
     done
 }
+
+# Execute download using environment variables exported from workflow
+if [ -n "$FW_URL_1" ] && [ -n "$FW_URL_2" ]; then
+    DOWNLOAD_FIRMWARE "$MODEL" "$FW_DIR" "$FW_URL_1" "$FW_URL_2" || exit 1
+else
+    echo "- ⚠️ FW_URL_1 or FW_URL_2 not set. Skipping dual firmware download."
+fi
