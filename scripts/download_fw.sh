@@ -96,7 +96,8 @@ VERIFY_ODIN_PACKAGES()
 
         CALCULATED_HASH="$(head -c-$LENGTH "$f" | md5sum | cut -d " " -f 1 -s)"
 
-        if [[ "$STORED_HASH" != "$CALCULATED_HASH" ]]; then            LOG "\033[0;31m! File is damaged\033[0m"
+        if [[ "$STORED_HASH" != "$CALCULATED_HASH" ]]; then
+            LOG "\033[0;31m! File is damaged\033[0m"
             exit 1
         fi
 
@@ -146,18 +147,25 @@ for i in "${FIRMWARES[@]}"; do
     LOG "- Downloading firmware..."
     [ -f "$ODIN_DIR/${MODEL}_${CSC}/.downloaded" ] && rm -rf "$ODIN_DIR/${MODEL}_${CSC}"
     mkdir -p "$ODIN_DIR/${MODEL}_${CSC}"
-    # SMFW Direct Download
+    
+    # SMFW Direct Download (Fixed IMEI Mismatch)
     DOWNLOADED=false
-    if [[ "$i" == "$SOURCE_FIRMWARE"* ]] && [ -n "$SOURCE_FW_URL" ]; then
-        wget --content-disposition --no-check-certificate --progress=bar:force:noscroll -P "$ODIN_DIR/${MODEL}_${CSC}" "$SOURCE_FW_URL" 2>&1 || true
-        DOWNLOADED=true
-    elif [[ "$i" == "$TARGET_FIRMWARE"* ]] && [ -n "$TARGET_FW_URL" ]; then
-        wget --content-disposition --no-check-certificate --progress=bar:force:noscroll -P "$ODIN_DIR/${MODEL}_${CSC}" "$TARGET_FW_URL" 2>&1 || true
+    FW_URL=""
+    
+    # Match by MODEL instead of full string to avoid IMEI mismatches
+    if [[ "$SOURCE_FIRMWARE" == *"$MODEL"* ]] && [ -n "$SOURCE_FW_URL" ]; then
+        FW_URL="$SOURCE_FW_URL"
+    elif [[ "$TARGET_FIRMWARE" == *"$MODEL"* ]] && [ -n "$TARGET_FW_URL" ]; then
+        FW_URL="$TARGET_FW_URL"
+    fi
+
+    if [ -n "$FW_URL" ]; then
+        wget --content-disposition --no-check-certificate --progress=bar:force:noscroll -P "$ODIN_DIR/${MODEL}_${CSC}" "$FW_URL" 2>&1 || true
         DOWNLOADED=true
     fi
 
     if ! $DOWNLOADED; then
-        LOG "\033[0;31m! No matching FW URL found for $MODEL ($i)\033[0m"
+        LOG "\033[0;31m! No matching FW URL found for $MODEL ($i). Ensure SOURCE_FW_URL or TARGET_FW_URL is set in YML.\033[0m"
         exit 1
     fi
 
