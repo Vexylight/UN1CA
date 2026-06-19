@@ -3,13 +3,13 @@ name: Build
 on:
   workflow_dispatch:
     inputs:
-      fw_url_1:
-        description: 'Firmware URL 1 (Direct HTTPS Link)'
-        required: true
+      source_fw_url:
+        description: 'Source Firmware URL'
+        required: false
         type: string
-      fw_url_2:
-        description: 'Firmware URL 2 (Direct HTTPS Link)'
-        required: true
+      target_fw_url:
+        description: 'Target Firmware URL'
+        required: false
         type: string
   pull_request:
   push:
@@ -78,16 +78,5 @@ jobs:
 
       - name: Download firmware
         if: github.event_name == 'workflow_dispatch'
-        run: |
-          source ./buildenv.sh ${{ matrix.target }}
-          ./scripts/download_fw.sh "${{ inputs.fw_url_1 }}" "${{ inputs.fw_url_2 }}"
-
-      - name: Extract stock firmwares
-        run: |
-          source ./buildenv.sh ${{ matrix.target }}
-          ./scripts/extract_fw.sh
-
-      - name: Build ROM
-        run: |
-          source ./buildenv.sh ${{ matrix.target }}
-          ./scripts/make_rom.sh
+        env:
+          SOURCE_FW_URL: ${{ inputs.source_fw_url
