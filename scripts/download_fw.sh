@@ -24,35 +24,32 @@ DOWNLOAD_FIRMWARE() {
     echo -e "${YELLOW}  Samsung FW Downloader (Dual Link)   ${NC}"
     echo -e "MODEL: $MODEL"
 
-    for i in 1 2; do
-        local URL_VAR="URL$i"
-        local URL="${!URL_VAR}"
-        local OUTPUT_FILE="$DOWN_DIR/${MODEL}_part${i}.zip"
-
+    local i=1
+    for URL in "$URL1" "$URL2"; do
         if [ -z "$URL" ]; then
             echo -e "- ⛔️ FIRMWARE_URL_$i is empty. Skipping download."
             return 1
         fi
 
-        echo -e "- 📥 Downloading firmware part $i via direct link..."
+        # Extract exact filename from URL, strip query params
+        local FILENAME
+        FILENAME="$(basename "${URL%%\?*}")"
+        local OUTPUT_FILE="$DOWN_DIR/$FILENAME"
+
+        echo -e "- 📥 Downloading firmware link $i via direct link..."
         wget --no-check-certificate --progress=bar:force "$URL" -O "$OUTPUT_FILE"
 
         if [ $? -ne 0 ] || [ ! -f "$OUTPUT_FILE" ]; then
-            echo -e "- ⛔️ Download failed for part $i. Check URL or network."
+            echo -e "- ⛔️ Download failed for link $i. Check URL or network."
             return 1
-        fi
-
-        # Handle .zip.md5 files
-        if [[ "$URL" == *.md5 ]]; then
-            echo -e "- 🔧 Detected .zip.md5 format for part $i. Removing MD5 suffix..."
-            mv "$OUTPUT_FILE" "$DOWN_DIR/${MODEL}_part${i}.zip"
-            OUTPUT_FILE="$DOWN_DIR/${MODEL}_part${i}.zip"
         fi
 
         local file_size
         file_size=$(du -m "$OUTPUT_FILE" | cut -f1)
-        echo -e "- ✅ Firmware part $i downloaded successfully! Size: ${file_size} MB"
+        echo -e "- ✅ Firmware link $i downloaded successfully! Size: ${file_size} MB"
         echo -e "- Saved to: $OUTPUT_FILE"
+
+        ((i++))
     done
 }
 
