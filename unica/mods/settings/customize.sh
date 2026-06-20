@@ -17,6 +17,10 @@ SMALI_PATCH "system" "system/framework/framework.jar" \
 
 DECODE_APK "system" "system/priv-app/SecSettings/SecSettings.apk"
 
+LOG_STEP_IN "- Adding ExtremeROM logo PNG"
+cp -a --preserve=all "$SRC_DIR/unica/mods/settings/SecSettings.apk/"* "$APKTOOL_DIR/system/priv-app/SecSettings/SecSettings.apk"
+LOG_STEP_OUT
+
 # Disable stock OTA references
 if [ ! -f "$WORK_DIR/system/system/priv-app/ChoiDujour/ChoiDujour.apk" ]; then
     SMALI_PATCH "system" "system/priv-app/SecSettings/SecSettings.apk" \
